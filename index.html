@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Héroe Legendario V3</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<style>
+body{margin:0;overflow:hidden;background:black;font-family:sans-serif}
+canvas{display:block;transition:filter .5s}
+#menu,#pause,#gameOver,#final{
+ position:fixed;inset:0;display:flex;flex-direction:column;
+ justify-content:center;align-items:center;
+ background:rgba(0,0,0,.85);color:white;gap:10px;z-index:10
+}
+#pause,#gameOver,#final{display:none}
+button{font-size:18px;padding:10px 20px}
+#ui{position:fixed;top:10px;left:10px;color:white;z-index:5}
+#controls{
+ position:fixed;bottom:20px;left:0;right:0;
+ display:flex;justify-content:space-between;padding:20px
+}
+.ctrl{
+ width:70px;height:70px;border-radius:50%;
+ background:rgba(255,255,255,.2);
+ color:white;font-size:30px;
+ display:flex;align-items:center;justify-content:center
+}
+</style>
+</head>
+<body>
+
+<audio id="musica" src="musica.mp3" loop></audio>
+<audio id="muerte" src="muerte.mp3"></audio>
+<audio id="disparo" src="disparo.mp3"></audio>
+<audio id="power" src="power.mp3"></audio>
+
+<div id="menu">
+ <h2>🦸 HÉROE LEGENDARIO</h2>
+ <button onclick="dif=1">🧒 Fácil</button>
+ <button onclick="dif=2">😎 Normal</button>
+ <button onclick="dif=3">😈 Difícil</button>
+ <button onclick="start()">▶ Jugar</button>
+ <div>🏆 Récord: <span id="record"></span></div>
+</div>
+
+<div id="pause">
+ ⏸️ PAUSA
+ <button onclick="pausado=false;pause.style.display='none'">Continuar</button>
+</div>
+
+<div id="gameOver">
+ 💀 GAME OVER
+ <button onclick="location.reload()">Menú</button>
+</div>
+
+<div id="final">
+ <h2>👑 FINAL</h2>
+ <p>El héroe derrotó al titán y salvó el mundo.</p>
+ <button onclick="location.reload()">Volver</button>
+</div>
+
+<div id="ui">
+Nivel: <span id="nivel"></span><br>
+Vidas: <span id="vidas"></span><br>
+Puntos: <span id="puntos"></span>
+</div>
+
+<canvas id="game"></canvas>
+
+<div id="controls">
+ <div class="ctrl" id="jump">⬆️</div>
+ <div class="ctrl" id="fire">🔥</div>
+</div>
+
+<script>
+const c=game,ctx=c.getContext("2d");
+c.width=innerWidth;c.height=innerHeight;
+
+const musica=document.getElementById("musica");
+document.addEventListener("touchstart",()=>musica.play(),{once:true});
+
+const heroImg=new Image();heroImg.src="hero_sheet.png";
+const enemyImg=new Image();enemyImg.src="enemy.png";
+const bossImg=new Image();bossImg.src="boss.png";
+const bgImg=new Image();bgImg.src="bg.png";
+
+let hero,enemigos,balas,jefe;
+let nivel=1,vidas=3,puntos=0,dif=1;
+let blurNivel=0,frame=0,bgX=0;
+let pausado=false,modoNoche=false;
+
+record.textContent=localStorage.getItem("record")||0;
+
+function start(){
+ menu.style.display="none";
+ iniciar();
+ loop();
+}
+
+function iniciar(){
+ hero={x:80,y:c.height/2,w:50,h:50,vy:0};
+ enemigos=[];balas=[];
+ jefe=null;
+ nivel=1;vidas=3;puntos=0;blurNivel=0;
+ game.style.filter="blur(0px)";
+}
+
+function disparar(){
+ balas.push({x:hero.x+hero.w,y:hero.y+hero.h/2});
+ disparo.play();
+}
+
+function actualizar(){
+ hero.vy+=0.6;hero.y+=hero.vy;
+ if(hero.y<0||hero.y+hero.h>c.height) perder();
+
+ if(Math.random()<0.02*dif)
+  enemigos.push({x:c.width,y:Math.random()*c.height,w:40,h:40,vy:(Math.random()-0.5)*2});
+
+ enemigos.forEach(e=>{
+  e.x-=2*dif;e.y+=e.vy;
+  if(col(hero,e)) perder();
+ });
+
+ balas.forEach(b=>b.x+=8);
+
+ enemigos=enemigos.filter(e=>{
+  return !balas.some(b=>col(b,e)&& (puntos+=10));
+ });
+
+ if(puntos>300 && !jefe){
+  jefe={x:c.width-250,y:c.height/2,w:180,h:180,vida:60,fase:1};
+ }
+
+ if(jefe){
+  jefe.y+=Math.sign(hero.y-jefe.y)*jefe.fase;
+  if(jefe.vida<40) jefe.fase=2;
+  if(jefe.vida<20) jefe.fase=3;
+
+  balas.forEach(b=>{
+   if(col(b,jefe)){jefe.vida--; }
+  });
+
+  if(jefe.vida<=0) final.style.display="flex";
+ }
+
+ if(puntos>200) modoNoche=true;
+
+ nivel=Math.floor(puntos/100)+1;
+}
+
+function dibujar(){
+ bgX=(bgX-1)%c.width;
+ ctx.drawImage(bgImg,bgX,0,c.width,c.height);
+ ctx.drawImage(bgImg,bgX+c.width,0,c.width,c.height);
+
+ ctx.drawImage(heroImg,frame*64,0,64,64,hero.x,hero.y,hero.w,hero.h);
+ frame=(frame+1)%4;
+
+ enemigos.forEach(e=>ctx.drawImage(enemyImg,e.x,e.y,e.w,e.h));
+ if(jefe) ctx.drawImage(bossImg,jefe.x,jefe.y,jefe.w,jefe.h);
+
+ ctx.fillStyle="yellow";
+ balas.forEach(b=>ctx.fillRect(b.x,b.y,8,4));
+
+ if(modoNoche){
+  ctx.fillStyle="rgba(0,0,50,.4)";
+  ctx.fillRect(0,0,c.width,c.height);
+ }
+
+ nivelSpan.textContent=nivel;
+ vidasSpan.textContent=vidas;
+ puntosSpan.textContent=puntos;
+}
+
+function perder(){
+ vidas--;blurNivel+=2;
+ game.style.filter=`blur(${blurNivel}px)`;
+ if(vidas<=0){
+  muerte.play();
+  localStorage.setItem("record",Math.max(puntos,localStorage.getItem("record")||0));
+  gameOver.style.display="flex";
+ }
+ hero.y=c.height/2;
+}
+
+function col(a,b){
+ return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
+}
+
+jump.onclick=()=>hero.vy=-10;
+fire.onclick=()=>disparar();
+
+addEventListener("keydown",e=>{
+ if(e.key==="p"){pausado=!pausado;pause.style.display=pausado?"flex":"none";}
+});
+
+function loop(){
+ if(!pausado){actualizar();dibujar();}
+ requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
